@@ -46,13 +46,20 @@ public class AggregateChangeUnitTests {
 			.getPropertyAccessor(entity);
 	Object id = 23;
 
-	DbAction.WithEntity<?> rootInsert = new DbAction.InsertRoot<>(entity);
+	PathNode rootNode = new PathNode(context, entity);
+	DbAction.WithEntity<?> rootInsert = new DbAction.InsertRoot<>(rootNode);
 
-	DbAction.Insert<?> createInsert(String propertyName, Object value, Object key) {
+	DbAction.Insert<?> createInsert(String propertyName, Object value, PathNode.ValueIdentificationStrategy identificationStrategy) {
+
+		////differen action needed based on key...
 
 		DbAction.Insert<Object> insert = new DbAction.Insert<>(value,
-				context.getPersistentPropertyPath(propertyName, DummyEntity.class), rootInsert);
-		insert.getAdditionalValues().put("dummy_entity_key", key);
+				new PathNode(
+						rootNode,
+						context.getPersistentPropertyPath(propertyName, DummyEntity.class),
+						identificationStrategy),
+				rootInsert);
+		insert.getAdditionalValues().put("dummy_entity_key", identificationStrategy.getIdentifier());
 
 		return insert;
 	}
@@ -62,9 +69,9 @@ public class AggregateChangeUnitTests {
 
 		entity.single = content;
 
-		DbAction.Insert<?> insert = createInsert("single", content, null);
+		DbAction.Insert<?> insert = createInsert("single", content, new PathNode.DirectValueIdentificationStrategy());
 
-		AggregateChange.setId(context, converter, propertyAccessor, insert, id);
+		AggregateChange.setId(context, converter, insert, id);
 
 		DummyEntity result = propertyAccessor.getBean();
 
@@ -76,9 +83,9 @@ public class AggregateChangeUnitTests {
 
 		entity.contentSet.add(content);
 
-		DbAction.Insert<?> insert = createInsert("contentSet", content, null);
+		DbAction.Insert<?> insert = createInsert("contentSet", content, new PathNode.LinkedHashSetValueIdentificationStrategy(0));
 
-		AggregateChange.setId(context, converter, propertyAccessor, insert, id);
+		AggregateChange.setId(context, converter, insert, id);
 
 		DummyEntity result = propertyAccessor.getBean();
 		assertThat(result.contentSet).isNotNull();
@@ -90,9 +97,9 @@ public class AggregateChangeUnitTests {
 
 		entity.contentList.add(content);
 
-		DbAction.Insert<?> insert = createInsert("contentList", content, 0);
+		DbAction.Insert<?> insert = createInsert("contentList", content, new PathNode.ListValueIdentificationStrategy(0));
 
-		AggregateChange.setId(context, converter, propertyAccessor, insert, id);
+		AggregateChange.setId(context, converter, insert, id);
 
 		DummyEntity result = propertyAccessor.getBean();
 		assertThat(result.contentList).extracting(c -> c.id).containsExactlyInAnyOrder(23);
@@ -103,9 +110,9 @@ public class AggregateChangeUnitTests {
 
 		entity.contentMap.put("one", content);
 
-		DbAction.Insert<?> insert = createInsert("contentMap", content, "one");
+		DbAction.Insert<?> insert = createInsert("contentMap", content, new PathNode.MappedValueIdentificationStrategy("one"));
 
-		AggregateChange.setId(context, converter, propertyAccessor, insert, id);
+		AggregateChange.setId(context, converter, insert, id);
 
 		DummyEntity result = propertyAccessor.getBean();
 		assertThat(result.contentMap.entrySet()).extracting(e -> e.getKey(), e -> e.getValue().id)

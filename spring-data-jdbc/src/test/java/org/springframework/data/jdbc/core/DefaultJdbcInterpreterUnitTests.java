@@ -28,6 +28,7 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.jdbc.core.mapping.JdbcMappingContext;
 import org.springframework.data.relational.core.conversion.DbAction.Insert;
 import org.springframework.data.relational.core.conversion.DbAction.InsertRoot;
+import org.springframework.data.relational.core.conversion.PathNode;
 import org.springframework.data.relational.core.mapping.NamingStrategy;
 import org.springframework.data.relational.core.mapping.RelationalMappingContext;
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty;
@@ -55,8 +56,13 @@ public class DefaultJdbcInterpreterUnitTests {
 	Container container = new Container();
 	Element element = new Element();
 
-	InsertRoot<Container> containerInsert = new InsertRoot<>(container);
-	Insert<?> insert = new Insert<>(element, PropertyPathUtils.toPath("element", Container.class, context),
+	PathNode rootNode = new PathNode(context, container);
+	InsertRoot<Container> containerInsert = new InsertRoot<>(rootNode);
+	Insert<?> insert = new Insert<>(element,
+			new PathNode(
+					rootNode,
+					PropertyPathUtils.toPath("element", Container.class, context),
+					new PathNode.DirectValueIdentificationStrategy()),
 			containerInsert);
 
 	@Test // DATAJDBC-145

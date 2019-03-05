@@ -182,9 +182,9 @@ class DefaultJdbcInterpreter implements Interpreter {
 		return persistentEntity.getIdentifierAccessor(entity).getIdentifier();
 	}
 
-	private String getColumnNameForReverseColumn(DbAction.WithPropertyPath<?> action) {
+	private String getColumnNameForReverseColumn(DbAction.WithPathNode<?> action) {
 
-		PersistentPropertyPath<RelationalPersistentProperty> path = action.getPropertyPath();
+		PersistentPropertyPath<RelationalPersistentProperty> path = action.getPathNode().getPropertyPath();
 		return path.getRequiredLeafProperty().getReverseColumnName();
 	}
 }

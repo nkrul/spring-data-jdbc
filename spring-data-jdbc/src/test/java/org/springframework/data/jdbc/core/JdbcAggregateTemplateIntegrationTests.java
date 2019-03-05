@@ -57,6 +57,7 @@ import org.springframework.transaction.annotation.Transactional;
  * @author Jens Schauder
  * @author Thomas Lang
  * @author Mark Paluch
+ * @author Nicholas Krul
  */
 @ContextConfiguration
 @Transactional
@@ -325,6 +326,42 @@ public class JdbcAggregateTemplateIntegrationTests {
 		assertThat(reloaded.content).extracting(e -> e.content).containsExactly("content");
 	}
 
+	@Test // DATAJDBC-291
+	public void saveAndLoadAnEntityWithHighlyNestedEntities() {
+
+		ParentNested entity = new ParentNested();
+		entity.name1 = "parent";
+
+		SingleNested singleNested1 = new SingleNested();
+		singleNested1.name2 = "singleNested1";
+		entity.singleNestedChildren.add(singleNested1);
+
+		SingleNested singleNested2 = new SingleNested();
+		singleNested2.name2 = "singleNested2";
+		entity.singleNestedChildren.add(singleNested2);
+
+		DoubleNested doubleNested1 = new DoubleNested();
+		doubleNested1.name3 = "doubleNested1_1";
+		singleNested1.doubleNestedChildren.add(doubleNested1);
+
+		DoubleNested doubleNested2 = new DoubleNested();
+		doubleNested1.name3 = "doubleNested1_2_2";
+		singleNested2.doubleNestedChildren.add(doubleNested2);
+
+		TripleNested tripleNested1 = new TripleNested();
+		tripleNested1.name4 = "tripleNested1_1_1";
+		doubleNested1.tripletNestedChildren.add(tripleNested1);
+
+		template.save(entity);
+
+		ParentNested reloaded = template.findById(entity.id, ParentNested.class);
+		template.delete(reloaded, ParentNested.class);
+
+		//
+//		assertThat(reloaded.singleNestedChildren).extracting(e -> e.name2).containsExactly("nested1");
+//		assertThat(reloaded.children).extracting(e -> e.content).extracting().containsExactly("content");
+	}
+
 	@Test // DATAJDBC-259
 	public void saveAndLoadAnEntityWithArray() {
 
@@ -499,6 +536,33 @@ public class JdbcAggregateTemplateIntegrationTests {
 
 	static class ElementNoId {
 		private String content;
+	}
+
+	static class ParentNested {
+
+		@Column("id5") @Id private Long id;
+		String name1;
+		List<SingleNested> singleNestedChildren = new ArrayList<>();
+	}
+
+	static class SingleNested {
+
+		@Column("id6") @Id private Long id;
+		String name2;
+		List<DoubleNested> doubleNestedChildren = new ArrayList<>();
+	}
+
+	static class DoubleNested {
+
+		@Column("id7") @Id private Long id;
+		String name3;
+		List<TripleNested> tripletNestedChildren = new ArrayList<>();
+	}
+
+	static class TripleNested {
+
+		@Column("id8") @Id private Long id;
+		String name4;
 	}
 
 	@Configuration

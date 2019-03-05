@@ -16,6 +16,8 @@
 package org.springframework.data.relational.core.conversion;
 
 import lombok.experimental.UtilityClass;
+import org.springframework.data.mapping.PersistentPropertyPath;
+import org.springframework.data.relational.core.mapping.RelationalPersistentProperty;
 
 /**
  * Utility class for analyzing DbActions in tests.
@@ -25,10 +27,17 @@ import lombok.experimental.UtilityClass;
 class DbActionTestSupport {
 
 	static String extractPath(DbAction action) {
+		PersistentPropertyPath<RelationalPersistentProperty> propertyPath = null;
+		if (action instanceof DbAction.WithPathNode) {
+			propertyPath = ((DbAction.WithPathNode<?>) action).getPathNode().getPropertyPath();
+		}
 
 		if (action instanceof DbAction.WithPropertyPath) {
-			return ((DbAction.WithPropertyPath<?>) action).getPropertyPath().toDotPath();
+			propertyPath = ((DbAction.WithPropertyPath<?>) action).getPropertyPath();
 		}
+
+		if (propertyPath != null)
+			return propertyPath.toDotPath();
 
 		return "";
 	}

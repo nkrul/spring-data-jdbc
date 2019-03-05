@@ -136,7 +136,7 @@ public class JdbcRepositoryEmbeddedWithCollectionIntegrationTests {
 		assertThat(repository.findById(entity.getId())).hasValueSatisfying(it -> {
 			assertThat(it.getId()).isEqualTo(saved.getId());
 			assertThat(it.getEmbeddable().getTest()).isEqualTo(saved.getEmbeddable().getTest());
-			assertThat(it.getEmbeddable().getList().size()).isEqualTo(saved.getEmbeddable().getList().size());
+			assertThat(it.getEmbeddable().getList().size()).isEqualTo(saved.getEmbeddable().getList().size()); //....//....
 			assertThat(it.getEmbeddable().getList().get(0).getTest()).isEqualTo(saved.getEmbeddable().getList().get(0).getTest());
 			assertThat(it.getEmbeddable().getList().get(1).getTest()).isEqualTo(saved.getEmbeddable().getList().get(1).getTest());
 		});

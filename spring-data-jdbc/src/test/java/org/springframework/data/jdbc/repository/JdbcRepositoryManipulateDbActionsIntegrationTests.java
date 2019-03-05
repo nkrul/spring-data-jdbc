@@ -40,6 +40,8 @@ import org.springframework.data.annotation.PersistenceConstructor;
 import org.springframework.data.jdbc.repository.config.EnableJdbcRepositories;
 import org.springframework.data.jdbc.testing.TestConfiguration;
 import org.springframework.data.relational.core.conversion.DbAction;
+import org.springframework.data.relational.core.conversion.PathNode;
+import org.springframework.data.relational.core.mapping.RelationalMappingContext;
 import org.springframework.data.relational.core.mapping.event.BeforeDeleteEvent;
 import org.springframework.data.relational.core.mapping.event.BeforeSaveEvent;
 import org.springframework.data.repository.CrudRepository;
@@ -205,7 +207,7 @@ public class JdbcRepositoryManipulateDbActionsIntegrationTests {
 
 				List<DbAction<?>> actions = event.getChange().getActions();
 				actions.clear();
-				actions.add(new DbAction.UpdateRoot<>(entity));
+				actions.add(new DbAction.UpdateRoot<>(new PathNode(new RelationalMappingContext(), entity)));
 			};
 		}
 
@@ -224,7 +226,7 @@ public class JdbcRepositoryManipulateDbActionsIntegrationTests {
 				log.text = entity.name + " saved";
 
 				List<DbAction<?>> actions = event.getChange().getActions();
-				actions.add(new DbAction.InsertRoot<>(log));
+				actions.add(new DbAction.InsertRoot<>(new PathNode(new RelationalMappingContext(), log)));
 			};
 		}
 	}

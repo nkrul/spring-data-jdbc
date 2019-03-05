@@ -15,6 +15,7 @@
  */
 package org.springframework.data.relational.core.conversion;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;

@@ -72,7 +72,7 @@ public interface DbAction<T> {
 	class Insert<T> implements WithGeneratedId<T>, WithDependingOn<T> {
 
 		@NonNull final T entity;
-		@NonNull final PersistentPropertyPath<RelationalPersistentProperty> propertyPath;
+		@NonNull final PathNode pathNode;
 		@NonNull final WithEntity<?> dependingOn;
 
 		Map<String, Object> additionalValues = new HashMap<>();
@@ -97,9 +97,20 @@ public interface DbAction<T> {
 	 */
 	@Data
 	@RequiredArgsConstructor
-	class InsertRoot<T> implements WithEntity<T>, WithGeneratedId<T> {
+	class InsertRoot<T> implements WithEntity<T>, WithPathNode<T>, WithGeneratedId<T> {
 
-		@NonNull private final T entity;
+		@NonNull private final PathNode pathNode;
+
+		@Override
+		public T getEntity() {
+			return (T) pathNode.getValue();
+		}
+
+		@SuppressWarnings("unchecked")
+		@Override
+		public Class<T> getEntityType() {
+			return (Class<T>) getEntity().getClass();
+		}
 
 		private Object generatedId;
 
@@ -132,9 +143,21 @@ public interface DbAction<T> {
 	 * @param <T> type of the entity for which this represents a database interaction.
 	 */
 	@Value
-	class UpdateRoot<T> implements WithEntity<T> {
+	class UpdateRoot<T> implements WithPathNode<T>, WithEntity<T> {
 
-		@NonNull private final T entity;
+		@NonNull private final PathNode pathNode;
+
+		@Override
+		public T getEntity() {
+			return (T) pathNode.getValue();
+		}
+
+		@SuppressWarnings("unchecked")
+		@Override
+		public Class<T> getEntityType() {
+			return (Class<T>) getEntity().getClass();
+		}
+
 
 		@Override
 		public void doExecuteWith(Interpreter interpreter) {
@@ -148,10 +171,10 @@ public interface DbAction<T> {
 	 * @param <T> type of the entity for which this represents a database interaction.
 	 */
 	@Value
-	class Merge<T> implements WithDependingOn<T>, WithPropertyPath<T> {
+	class Merge<T> implements WithDependingOn<T>, WithPathNode<T> {
 
 		@NonNull T entity;
-		@NonNull PersistentPropertyPath<RelationalPersistentProperty> propertyPath;
+		@NonNull PathNode pathNode;
 		@NonNull WithEntity<?> dependingOn;
 
 		Map<String, Object> additionalValues = new HashMap<>();
@@ -240,7 +263,7 @@ public interface DbAction<T> {
 	 *
 	 * @author Jens Schauder
 	 */
-	interface WithDependingOn<T> extends WithPropertyPath<T>, WithEntity<T> {
+	interface WithDependingOn<T> extends WithPathNode<T>, WithEntity<T> {
 
 		/**
 		 * The {@link DbAction} of a parent entity, possibly the aggregate root. This is used to obtain values needed to
@@ -323,6 +346,25 @@ public interface DbAction<T> {
 		@Override
 		default Class<T> getEntityType() {
 			return (Class<T>) getPropertyPath().getRequiredLeafProperty().getActualType();
+		}
+	}
+
+	/**
+	 * A {@link DbAction} Operation on the referenced entity instance.
+	 *
+	 * @author Nicholas Krul
+	 */
+	interface WithPathNode<T> extends DbAction<T> {
+
+		/**
+		 * @return {@link PathNode} for this entity, a combination of a specific entity and a path to address it
+		 */
+		PathNode getPathNode();
+
+		@SuppressWarnings("unchecked")
+		@Override
+		default Class<T> getEntityType() {
+			return (Class<T>) getPathNode().getPropertyPath().getRequiredLeafProperty().getActualType();
 		}
 	}
 }

@@ -24,6 +24,7 @@ import java.util.Set;
 
 import org.springframework.data.mapping.PersistentPropertyAccessor;
 import org.springframework.data.mapping.PersistentPropertyPath;
+import org.springframework.data.mapping.model.ConvertingPropertyAccessor;
 import org.springframework.data.relational.core.mapping.RelationalMappingContext;
 import org.springframework.data.relational.core.mapping.RelationalPersistentEntity;
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty;
@@ -35,6 +36,7 @@ import org.springframework.util.Assert;
  *
  * @author Jens Schauder
  * @author Mark Paluch
+ * @author Nicholas Krul
  */
 @Getter
 public class AggregateChange<T> {
@@ -59,6 +61,8 @@ public class AggregateChange<T> {
 	@SuppressWarnings("unchecked")
 	public void executeWith(Interpreter interpreter, RelationalMappingContext context, RelationalConverter converter) {
 
+		PathNode rootUpdateNode = null;
+
 		RelationalPersistentEntity<T> persistentEntity = entity != null
 				? (RelationalPersistentEntity<T>) context.getRequiredPersistentEntity(entity.getClass())
 				: null;
@@ -68,9 +72,15 @@ public class AggregateChange<T> {
 						? converter.getPropertyAccessor(persistentEntity, entity) //
 						: null;
 
-		actions.forEach(a -> {
+		for(DbAction a: actions) {
 
 			a.executeWith(interpreter);
+
+			if (a instanceof DbAction.InsertRoot || a instanceof  DbAction.UpdateRoot) {
+				PathNode node = ((DbAction.WithPathNode)a).getPathNode();
+				if (entityType.equals(node.getValue().getClass()))
+					rootUpdateNode = node;
+			}
 
 			if (a instanceof DbAction.WithGeneratedId) {
 
@@ -84,15 +94,18 @@ public class AggregateChange<T> {
 
 					if (a instanceof DbAction.InsertRoot && a.getEntityType().equals(entityType)) {
 						propertyAccessor.setProperty(persistentEntity.getRequiredIdProperty(), generatedId);
+						rootUpdateNode.setValue(propertyAccessor.getBean());
 					} else if (a instanceof DbAction.WithDependingOn) {
 
-						setId(context, converter, propertyAccessor, (DbAction.WithDependingOn<?>) a, generatedId);
+						setId(context, converter, (DbAction.WithDependingOn<?>) a, generatedId);
 					}
 				}
 			}
-		});
+		}
 
-		if (propertyAccessor != null) {
+		if (rootUpdateNode != null) {
+			entity = (T)rootUpdateNode.getValue();
+		} else if (propertyAccessor != null) {
 			entity = propertyAccessor.getBean();
 		}
 	}
@@ -102,81 +115,31 @@ public class AggregateChange<T> {
 	}
 
 	@SuppressWarnings("unchecked")
-	static void setId(RelationalMappingContext context, RelationalConverter converter,
-			PersistentPropertyAccessor<?> propertyAccessor, DbAction.WithDependingOn<?> action, Object generatedId) {
+	static void setId(
+			RelationalMappingContext context,
+			RelationalConverter converter,
+			DbAction.WithDependingOn<?> action,
+			Object generatedId
+	) {
 
-		PersistentPropertyPath<RelationalPersistentProperty> propertyPathToEntity = action.getPropertyPath();
+		Object currentPropertyValue = action.getPathNode().getValue();
 
-		RelationalPersistentProperty leafProperty = propertyPathToEntity.getRequiredLeafProperty();
+		RelationalPersistentEntity persistentEntity = context.getRequiredPersistentEntity(action.getEntity().getClass());
+		PersistentPropertyAccessor propertyAccessor = converter.getPropertyAccessor(persistentEntity, action.getEntity());
 
-		Object currentPropertyValue = propertyAccessor.getProperty(propertyPathToEntity);
 		Assert.notNull(currentPropertyValue, "Trying to set an ID for an element that does not exist");
 
-		if (leafProperty.isQualified()) {
+		RelationalPersistentProperty requiredIdProperty = context
+				.getRequiredPersistentEntity(action.getPathNode().getPropertyPath().getRequiredLeafProperty().getActualType()) //propertyPathToEntity
+				.getRequiredIdProperty();
 
-			String keyColumn = leafProperty.getKeyColumn();
-			Object keyObject = action.getAdditionalValues().get(keyColumn);
+		PersistentPropertyPath<RelationalPersistentProperty> pathToId = context.getPersistentPropertyPath(
+				requiredIdProperty.getName(),
+				requiredIdProperty.getOwner().getType());
 
-			if (List.class.isAssignableFrom(leafProperty.getType())) {
-				setIdInElementOfList(converter, action, generatedId, (List) currentPropertyValue, (int) keyObject);
-			} else if (Map.class.isAssignableFrom(leafProperty.getType())) {
-				setIdInElementOfMap(converter, action, generatedId, (Map) currentPropertyValue, keyObject);
-			} else {
-				throw new IllegalStateException("Can't handle " + currentPropertyValue);
-			}
-		} else if (leafProperty.isCollectionLike()) {
+		propertyAccessor.setProperty(pathToId, generatedId);
 
-			if (Set.class.isAssignableFrom(leafProperty.getType())) {
-				setIdInElementOfSet(converter, action, generatedId, (Set) currentPropertyValue);
-			} else {
-				throw new IllegalStateException("Can't handle " + currentPropertyValue);
-			}
-		} else {
-
-			RelationalPersistentProperty requiredIdProperty = context
-					.getRequiredPersistentEntity(propertyPathToEntity.getRequiredLeafProperty().getActualType())
-					.getRequiredIdProperty();
-
-			PersistentPropertyPath<RelationalPersistentProperty> pathToId = context.getPersistentPropertyPath(
-					propertyPathToEntity.toDotPath() + '.' + requiredIdProperty.getName(),
-					propertyPathToEntity.getBaseProperty().getOwner().getType());
-
-			propertyAccessor.setProperty(pathToId, generatedId);
-		}
-	}
-
-	@SuppressWarnings("unchecked")
-	private static <T> void setIdInElementOfSet(RelationalConverter converter, DbAction.WithDependingOn<?> action,
-			Object generatedId, Set<T> set) {
-
-		PersistentPropertyAccessor<?> intermediateAccessor = setId(converter, action, generatedId);
-
-		// this currently only works on the standard collections
-		// no support for immutable collections, nor specialized ones.
-		set.remove((T) action.getEntity());
-		set.add((T) intermediateAccessor.getBean());
-	}
-
-	@SuppressWarnings("unchecked")
-	private static <K, V> void setIdInElementOfMap(RelationalConverter converter, DbAction.WithDependingOn<?> action,
-			Object generatedId, Map<K, V> map, K keyObject) {
-
-		PersistentPropertyAccessor<?> intermediateAccessor = setId(converter, action, generatedId);
-
-		// this currently only works on the standard collections
-		// no support for immutable collections, nor specialized ones.
-		map.put(keyObject, (V) intermediateAccessor.getBean());
-	}
-
-	@SuppressWarnings("unchecked")
-	private static <T> void setIdInElementOfList(RelationalConverter converter, DbAction.WithDependingOn<?> action,
-			Object generatedId, List<T> list, int index) {
-
-		PersistentPropertyAccessor<?> intermediateAccessor = setId(converter, action, generatedId);
-
-		// this currently only works on the standard collections
-		// no support for immutable collections, nor specialized ones.
-		list.set(index, (T) intermediateAccessor.getBean());
+		action.getPathNode().setValue(propertyAccessor.getBean());
 	}
 
 	/**

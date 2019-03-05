@@ -209,12 +209,12 @@ public class RelationalEntityWriterUnitTests {
 						tuple(InsertRoot.class, CascadingReferenceEntity.class, "", CascadingReferenceEntity.class, false), //
 						tuple(Insert.class, CascadingReferenceMiddleElement.class, "other", CascadingReferenceMiddleElement.class,
 								true), //
+						tuple(Insert.class, Element.class, "element", Element.class, true), //
+						tuple(Insert.class, Element.class, "element", Element.class, true), //
 						tuple(Insert.class, CascadingReferenceMiddleElement.class, "other", CascadingReferenceMiddleElement.class,
 								true), //
-						tuple(Insert.class, Element.class, "other.element", Element.class, true), //
-						tuple(Insert.class, Element.class, "other.element", Element.class, true), //
-						tuple(Insert.class, Element.class, "other.element", Element.class, true), //
-						tuple(Insert.class, Element.class, "other.element", Element.class, true) //
+						tuple(Insert.class, Element.class, "element", Element.class, true), //
+						tuple(Insert.class, Element.class, "element", Element.class, true) //
 				);
 	}
 
@@ -247,12 +247,12 @@ public class RelationalEntityWriterUnitTests {
 						tuple(UpdateRoot.class, CascadingReferenceEntity.class, "", CascadingReferenceEntity.class, false), //
 						tuple(Insert.class, CascadingReferenceMiddleElement.class, "other", CascadingReferenceMiddleElement.class,
 								true), //
+						tuple(Insert.class, Element.class, "element", Element.class, true), //
+						tuple(Insert.class, Element.class, "element", Element.class, true), //
 						tuple(Insert.class, CascadingReferenceMiddleElement.class, "other", CascadingReferenceMiddleElement.class,
 								true), //
-						tuple(Insert.class, Element.class, "other.element", Element.class, true), //
-						tuple(Insert.class, Element.class, "other.element", Element.class, true), //
-						tuple(Insert.class, Element.class, "other.element", Element.class, true), //
-						tuple(Insert.class, Element.class, "other.element", Element.class, true) //
+						tuple(Insert.class, Element.class, "element", Element.class, true), //
+						tuple(Insert.class, Element.class, "element", Element.class, true) //
 				);
 	}
 

@@ -35,7 +35,7 @@ public class DbActionUnitTests {
 	public void exceptionFromActionContainsUsefulInformationWhenInterpreterFails() {
 
 		DummyEntity entity = new DummyEntity();
-		DbAction.InsertRoot<DummyEntity> insert = new DbAction.InsertRoot<>(entity);
+		DbAction.InsertRoot<DummyEntity> insert = new DbAction.InsertRoot<>(new PathNode(context, entity));
 
 		Interpreter failingInterpreter = mock(Interpreter.class);
 		doThrow(new RuntimeException()).when(failingInterpreter).interpret(any(DbAction.InsertRoot.class));

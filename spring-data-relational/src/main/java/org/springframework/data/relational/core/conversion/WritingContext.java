@@ -21,10 +21,13 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
+import org.springframework.data.mapping.PersistentPropertyAccessor;
 import org.springframework.data.mapping.PersistentPropertyPath;
 import org.springframework.data.mapping.PersistentPropertyPaths;
 import org.springframework.data.relational.core.mapping.RelationalMappingContext;
+import org.springframework.data.relational.core.mapping.RelationalPersistentEntity;
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty;
 import org.springframework.data.util.Pair;
 import org.springframework.lang.Nullable;
@@ -35,24 +38,19 @@ import org.springframework.util.Assert;
  *
  * @author Jens Schauder
  * @author Bastian Wilhelm
+ * @author Nicholas Krul
  */
 class WritingContext {
 
 	private final RelationalMappingContext context;
-	private final Object root;
 	private final Object entity;
-	private final Class<?> entityType;
-	private final PersistentPropertyPaths<?, RelationalPersistentProperty> paths;
 	private final Map<PathNode, DbAction> previousActions = new HashMap<>();
-	private Map<PersistentPropertyPath<RelationalPersistentProperty>, List<PathNode>> nodesCache = new HashMap<>();
 
 	WritingContext(RelationalMappingContext context, Object root, AggregateChange<?> aggregateChange) {
 
+	    //root and entity are *always* the same???  nK TRACE
 		this.context = context;
-		this.root = root;
 		this.entity = aggregateChange.getEntity();
-		this.entityType = aggregateChange.getEntityType();
-		this.paths = context.findPersistentPropertyPaths(entityType, (p) -> p.isEntity() && !p.isEmbedded());
 	}
 
 	/**
@@ -64,8 +62,9 @@ class WritingContext {
 	List<DbAction<?>> insert() {
 
 		List<DbAction<?>> actions = new ArrayList<>();
-		actions.add(setRootAction(new DbAction.InsertRoot<>(entity)));
-		actions.addAll(insertReferenced());
+		PathNode rootNode = new PathNode(context, entity);
+		actions.add(setRootAction(rootNode, new DbAction.InsertRoot<>(rootNode)));
+		actions.addAll(insertReferenced(rootNode));
 		return actions;
 	}
 
@@ -77,24 +76,26 @@ class WritingContext {
 	 */
 	List<DbAction<?>> update() {
 
-		List<DbAction<?>> actions = new ArrayList<>(deleteReferenced());
-		actions.add(setRootAction(new DbAction.UpdateRoot<>(entity)));
-		actions.addAll(insertReferenced());
+		PathNode rootNode = new PathNode(context, entity);
+		List<DbAction<?>> actions = new ArrayList<>(deleteReferenced(rootNode));
+		actions.add(setRootAction(rootNode, new DbAction.UpdateRoot<>(rootNode)));
+		actions.addAll(insertReferenced(rootNode));
 		return actions;
 	}
 
 	List<DbAction<?>> save() {
 
 		List<DbAction<?>> actions = new ArrayList<>();
-		if (isNew(root)) {
+		PathNode rootNode = new PathNode(context, entity);
+		if (isNew(entity)) {
 
-			actions.add(setRootAction(new DbAction.InsertRoot<>(entity)));
-			actions.addAll(insertReferenced());
+			actions.add(setRootAction(rootNode, new DbAction.InsertRoot<>(rootNode)));
+			actions.addAll(insertReferenced(rootNode));
 		} else {
 
-			actions.addAll(deleteReferenced());
-			actions.add(setRootAction(new DbAction.UpdateRoot<>(entity)));
-			actions.addAll(insertReferenced());
+			actions.addAll(deleteReferenced(rootNode));
+			actions.add(setRootAction(rootNode, new DbAction.UpdateRoot<>(rootNode)));
+			actions.addAll(insertReferenced(rootNode));
 		}
 
 		return actions;
@@ -106,66 +107,58 @@ class WritingContext {
 
 	//// Operations on all paths
 
-	private List<DbAction<?>> insertReferenced() {
+	private List<DbAction<?>> insertReferenced(PathNode parent) {
+
+		List<DbAction<?>> actions = new ArrayList<>();
+		parent.calculateChildNodes().forEach(path -> actions.addAll(insertAll(path)));
+		return actions;
+	}
+
+	private List<DbAction<?>> insertAll(PathNode node) {
 
 		List<DbAction<?>> actions = new ArrayList<>();
 
-		paths.forEach(path -> actions.addAll(insertAll(path)));
+		DbAction.Insert<Object> insert;
+		if (node.getPropertyPath().getRequiredLeafProperty().isQualified()) {
+
+			insert = new DbAction.Insert<>(node.getValue(), node, getAction(node.getParent()));
+			insert.getAdditionalValues().put(node.getPropertyPath().getRequiredLeafProperty().getKeyColumn(), node.getIdentifier().getIdentifier());
+
+		} else {
+			insert = new DbAction.Insert<>(node.getValue(), node, getAction(node.getParent()));
+		}
+		previousActions.put(node, insert);
+		actions.add(insert);
+
+		node.calculateChildNodes().forEach(path -> actions.addAll(insertAll(path)));
 
 		return actions;
 	}
 
-	private List<DbAction<?>> insertAll(PersistentPropertyPath<RelationalPersistentProperty> path) {
-
-		List<DbAction<?>> actions = new ArrayList<>();
-
-		from(path).forEach(node -> {
-
-			DbAction.Insert<Object> insert;
-			if (node.getPath().getRequiredLeafProperty().isQualified()) {
-
-				@SuppressWarnings("unchecked")
-				Pair<Object, Object> value = (Pair) node.getValue();
-				insert = new DbAction.Insert<>(value.getSecond(), path, getAction(node.getParent()));
-				insert.getAdditionalValues().put(node.getPath().getRequiredLeafProperty().getKeyColumn(), value.getFirst());
-
-			} else {
-				insert = new DbAction.Insert<>(node.getValue(), path, getAction(node.getParent()));
-			}
-			previousActions.put(node, insert);
-			actions.add(insert);
-		});
-
-		return actions;
-	}
-
-	private List<DbAction<?>> deleteReferenced() {
+	private List<DbAction<?>> deleteReferenced(PathNode node) {
 
 		List<DbAction<?>> deletes = new ArrayList<>();
-		paths.forEach(path -> deletes.add(0, deleteReferenced(path)));
+
+		Object value = node.getValue();
+		Object id = context.getRequiredPersistentEntity(entity.getClass()).getIdentifierAccessor(entity).getIdentifier();
+
+		context
+				.findPersistentPropertyPaths(value.getClass(), (p) -> p.isEntity() && !p.isEmbedded())
+				.forEach(path -> deletes.add(0, new DbAction.Delete<>(id, path)));
 
 		return deletes;
 	}
 
-	/// Operations on a single path
-
-	private DbAction.Delete<?> deleteReferenced(PersistentPropertyPath<RelationalPersistentProperty> path) {
-
-		Object id = context.getRequiredPersistentEntity(entityType).getIdentifierAccessor(entity).getIdentifier();
-
-		return new DbAction.Delete<>(id, path);
-	}
-
 	//// methods not directly related to the creation of DbActions
 
-	private DbAction<?> setRootAction(DbAction<?> dbAction) {
+	private DbAction<?> setRootAction(PathNode node, DbAction<?> dbAction) {
 
-		previousActions.put(null, dbAction);
+		previousActions.put(node, dbAction);
 		return dbAction;
 	}
 
 	@Nullable
-	private DbAction.WithEntity<?> getAction(@Nullable PathNode parent) {
+	private DbAction.WithEntity<?> getAction(PathNode parent) {
 
 		DbAction action = previousActions.get(parent);
 
@@ -181,87 +174,6 @@ class WritingContext {
 		}
 
 		return null;
-	}
-	// commented as of #DATAJDBC-282
-	// private boolean isNew(Object o) {
-	// return context.getRequiredPersistentEntity(o.getClass()).isNew(o);
-	// }
-
-	private List<PathNode> from(PersistentPropertyPath<RelationalPersistentProperty> path) {
-
-		List<PathNode> nodes = new ArrayList<>();
-
-		if (isDirectlyReferencedByRootIgnoringEmbeddables(path)) {
-
-			Object value = getFromRootValue(path);
-			nodes.addAll(createNodes(path, null, value));
-
-		} else {
-
-			List<PathNode> pathNodes = nodesCache.get(path.getParentPath());
-			pathNodes.forEach(parentNode -> {
-
-				Object value = path.getRequiredLeafProperty().getOwner().getPropertyAccessor(parentNode.getValue())
-						.getProperty(path.getRequiredLeafProperty());
-
-				nodes.addAll(createNodes(path, parentNode, value));
-			});
-		}
-
-		nodesCache.put(path, nodes);
-
-		return nodes;
-	}
-
-	private boolean isDirectlyReferencedByRootIgnoringEmbeddables(
-			PersistentPropertyPath<RelationalPersistentProperty> path) {
-
-		PersistentPropertyPath<RelationalPersistentProperty> currentPath = path.getParentPath();
-
-		while (!currentPath.isEmpty()) {
-
-			if (!currentPath.getRequiredLeafProperty().isEmbedded()) {
-				return false;
-			}
-			currentPath = currentPath.getParentPath();
-		}
-
-		return true;
-	}
-
-	@Nullable
-	private Object getFromRootValue(PersistentPropertyPath<RelationalPersistentProperty> path) {
-		return path.getBaseProperty().getOwner().getPropertyAccessor(entity).getProperty(path);
-	}
-
-	private List<PathNode> createNodes(PersistentPropertyPath<RelationalPersistentProperty> path,
-			@Nullable PathNode parentNode, @Nullable Object value) {
-
-		if (value == null) {
-			return Collections.emptyList();
-		}
-
-		List<PathNode> nodes = new ArrayList<>();
-		if (path.getRequiredLeafProperty().isEmbedded()) {
-			nodes.add(new PathNode(path, parentNode, value));
-		} else if (path.getRequiredLeafProperty().isQualified()) {
-
-			if (path.getRequiredLeafProperty().isMap()) {
-				((Map<?, ?>) value).forEach((k, v) -> nodes.add(new PathNode(path, parentNode, Pair.of(k, v))));
-			} else {
-
-				List listValue = (List) value;
-				for (int k = 0; k < listValue.size(); k++) {
-					nodes.add(new PathNode(path, parentNode, Pair.of(k, listValue.get(k))));
-				}
-			}
-		} else if (path.getRequiredLeafProperty().isCollectionLike()) { // collection value
-			((Collection<?>) value).forEach(v -> nodes.add(new PathNode(path, parentNode, v)));
-		} else { // single entity value
-			nodes.add(new PathNode(path, parentNode, value));
-		}
-
-		return nodes;
 	}
 
 }
